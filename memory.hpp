@@ -37,6 +37,16 @@ public:
 		return WriteProcessMemory(processHandle, (LPVOID)address, &value, sizeof(var), NULL);
 	}
 
+	bool patch_bytes(ULONG_PTR address, BYTE* data, SIZE_T size)
+	{
+		DWORD oldProtect;
+		if (!VirtualProtectEx(processHandle, (LPVOID)address, size, PAGE_EXECUTE_READWRITE, &oldProtect))
+			return false;
+		bool result = WriteProcessMemory(processHandle, (LPVOID)address, data, size, NULL);
+		VirtualProtectEx(processHandle, (LPVOID)address, size, oldProtect, &oldProtect);
+		return result;
+	}
+
 	template <typename var>
 	var read_mem(ULONG_PTR address) {
 		var value = {};
@@ -53,6 +63,63 @@ public:
 			Address += offsets[i];
 		}
 		return Address;
+	}
+
+	ULONG_PTR scan_pattern(BYTE* pattern, const char* mask)
+	{
+		MODULEENTRY32 mod = { 0 };
+		mod.dwSize = sizeof(MODULEENTRY32);
+		HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pID);
+		ULONG_PTR base = 0;
+		ULONG_PTR size = 0;
+		if (hSnap != INVALID_HANDLE_VALUE)
+		{
+			if (Module32First(hSnap, &mod))
+			{
+				do {
+					if (strcmp(mod.szModule, "rwr_game.exe") == 0)
+					{
+						base = (ULONG_PTR)mod.modBaseAddr;
+						size = (ULONG_PTR)mod.modBaseSize;
+						break;
+					}
+				} while (Module32Next(hSnap, &mod));
+			}
+			CloseHandle(hSnap);
+		}
+		if (base == 0 || size == 0) return 0;
+
+		BYTE* buffer = new BYTE[size];
+		SIZE_T bytesRead;
+		if (!ReadProcessMemory(processHandle, (LPCVOID)base, buffer, size, &bytesRead))
+		{
+			delete[] buffer;
+			return 0;
+		}
+
+		size_t patternLen = strlen(mask);
+		ULONG_PTR result = 0;
+
+		for (ULONG_PTR i = 0; i <= bytesRead - patternLen; i++)
+		{
+			bool found = true;
+			for (size_t j = 0; j < patternLen; j++)
+			{
+				if (mask[j] == 'x' && buffer[i + j] != pattern[j])
+				{
+					found = false;
+					break;
+				}
+			}
+			if (found)
+			{
+				result = base + i;
+				break;
+			}
+		}
+
+		delete[] buffer;
+		return result;
 	}
 
 private:

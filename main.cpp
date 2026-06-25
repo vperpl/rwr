@@ -1,4 +1,4 @@
-﻿#include "client.hpp"
+#include "client.hpp"
 
 #include <Windows.h>
 #include <iomanip>
@@ -73,10 +73,11 @@ int main()
     std::cout << "Running with Rifles Xan-Hack\n";
     std::cout << "###################################\n";
     std::cout << "Keys:\n";
-    std::cout << std::setw(28) << std::left << "Left Alt" << "- TELEPORTO while held\n";
-    std::cout << std::setw(28) << std::left << "Left Shift" << "- TRIGGEROBOTO while held/throttled\n";
-    std::cout << std::setw(28) << std::left << "Insert" << "- TOP-DOWN camera mode\n";
-    std::cout << std::setw(28) << std::left << "Page Up / Page Down" << "- Adjust camera when enabled\n";
+    std::cout << std::setw(28) << std::left << "Home" << "- Disables Fog of War - MAINMENU!\n";
+    std::cout << std::setw(28) << std::left << "Insert" << "- Toggle super camera\n";
+    std::cout << std::setw(28) << std::left << "Page Up / Page Down" << "- Adjust camera height\n";
+    std::cout << std::setw(28) << std::left << "Right Click" << "- Triggerbot (auto-shoot)\n";
+    std::cout << std::setw(28) << std::left << "Left Alt" << "- Teleport to crosshair\n";
     std::cout << std::setw(28) << std::left << "F1" << "- Toggle debug logs\n";
     std::cout << std::setw(28) << std::left << "End" << "- Exit\n";
     std::cout << "###################################\n\n";
@@ -119,9 +120,22 @@ int main()
 
     Client client(memory);
 
-    bool debugLogs = true;
-    bool enabled_super_camera_view = false;
+    ULONG_PTR fowAddress = memory.gameBaseAddress + 0xB7EAF + 8;
+    std::cout << "[OK] FOW patch address (offset): 0x"
+        << std::hex << fowAddress << std::dec << "\n";
 
+    BYTE fowPatchEnable[8] = {
+        0xC6, 0x83, 0xD9, 0x12, 0x00, 0x00, 0x00,
+        0x90
+    };
+
+    memory.patch_bytes(fowAddress, fowPatchEnable, 8);
+    std::cout << "[OK] FOW disabled at startup.\n";
+
+    bool superCameraEnabled = false;
+    bool debugLogs = true;
+
+    KeyLatch homeKey;
     KeyLatch insertKey;
     KeyLatch f1Key;
     KeyLatch endKey;
@@ -132,8 +146,10 @@ int main()
     DWORD lastPageAdjust = 0;
     DWORD lastHeartbeat = 0;
 
-    std::cout << "[INFO] Main loop started.\n";
-    std::cout << "[INFO] Debug logs are ON. Press F1 to toggle.\n\n";
+    std::cout << "  [HOME]  Disable fog of war\n";
+    std::cout << "[INSERT]  Super camera toggle\n";
+    std::cout << "  [F1]    Debug logs\n";
+    std::cout << "  [END]   Exit\n\n";
 
     while (true)
     {
@@ -155,27 +171,44 @@ int main()
                 << std::endl;
         }
 
+        if (homeKey.pressed(VK_HOME))
+        {
+            memory.patch_bytes(fowAddress, fowPatchEnable, 8);
+            std::cout << "[FOW] Fog of war disabled (patch re-applied)\n";
+        }
+
+        if (insertKey.pressed(VK_INSERT))
+        {
+            superCameraEnabled = !superCameraEnabled;
+            if (superCameraEnabled)
+            {
+                client.set_camera_angles(Vector3{0.0f, -2.2f, 0.0000001f});
+                std::cout << "[CAMERA] Super camera ON\n";
+            }
+            else
+            {
+                client.set_camera_angles(Vector3{-0.15f, -0.85f, 0.5f});
+                std::cout << "[CAMERA] Super camera OFF\n";
+            }
+        }
+
         if (debugLogs && now - lastHeartbeat > 3000)
         {
             std::cout << "[ALIVE] Loop running. "
                 << "ALT=" << IsKeyDown(VK_LMENU)
                 << " SHIFT=" << IsKeyDown(VK_LSHIFT)
-                << " INSERT=" << IsKeyDown(VK_INSERT)
                 << std::endl;
 
             lastHeartbeat = now;
         }
 
-        // =========================
-        // Trigger Bot - Left MOUSE BUTTON 2
-        // =========================
         if (IsKeyDown(VK_RBUTTON))
         {
             int crosshair_status = client.get_crosshair_status();
 
             if (debugLogs && now - lastAltLog > 250)
             {
-                std::cout << "[KEY] Left ALT held. crosshair_status = "
+                std::cout << "[KEY] Right Click held. crosshair_status = "
                     << crosshair_status << std::endl;
                 lastAltLog = now;
             }
@@ -192,17 +225,13 @@ int main()
             }
         }
 
-        // =========================
-        // Teleport - Left ALT
-        // =========================
         if (IsKeyDown(VK_LMENU))
         {
-            // Throttle so it does not spam thousands of calls per second.
             if (now - lastTeleport > 150)
             {
                 if (debugLogs)
                 {
-                    std::cout << "[KEY] Left Shift held. teleport_to(crosshair_position) called.\n";
+                    std::cout << "[KEY] Left Alt held. teleport_to(crosshair_position) called.\n";
                 }
 
                 auto crosshairPos = client.get_crosshair_position();
@@ -212,58 +241,7 @@ int main()
             }
         }
 
-        // =========================
-        // Toggle Camera - Insert
-        // =========================
-        if (insertKey.pressed(VK_INSERT))
-        {
-            std::cout << "[KEY] Insert pressed.\n";
-
-            Vector3 before = client.get_camera_angles();
-            PrintVector3("[CAMERA] Before", before);
-
-            if (!enabled_super_camera_view)
-            {
-                std::cout << "[ACTION] Enabling custom camera.\n";
-
-                client.set_camera_angles(Vector3{
-                    0.0f,
-                    -2.2f,
-                    0.0000001f
-                    });
-
-                enabled_super_camera_view = true;
-            }
-            else
-            {
-                std::cout << "[ACTION] Restoring default camera.\n";
-
-                client.set_camera_angles(Vector3{
-                    -0.15f,
-                    -0.85f,
-                    0.5f
-                    });
-
-                enabled_super_camera_view = false;
-            }
-
-            Sleep(30);
-
-            Vector3 after = client.get_camera_angles();
-            PrintVector3("[CAMERA] After ", after);
-
-            std::cout << "[CAMERA] enabled_super_camera_view = "
-                << std::boolalpha
-                << enabled_super_camera_view
-                << std::noboolalpha
-                << "\n";
-        }
-
-        // =========================
-        // Camera height adjust
-        // Page Up / Page Down
-        // =========================
-        if (enabled_super_camera_view)
+        if (superCameraEnabled)
         {
             if (now - lastPageAdjust > 50)
             {

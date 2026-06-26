@@ -1,0 +1,7 @@
+Character - > Fighter
+
+GameInputHandler -> FighterInputHandler
+
+ApplicationMode -> Game
+
+Network::Host -> Network::Client

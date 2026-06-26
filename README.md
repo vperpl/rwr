@@ -12,6 +12,10 @@
 | **F1** | Debug Logs | Toggles detailed console output. |
 | **End** | Exit | Closes the hack cleanly. |
 
+## Downloads
+
+Precompiled binaries available at [github.com/vperpl/rwr/releases](https://github.com/vperpl/rwr/releases)
+
 ## Build
 
 Open `running_with_rifles_hack.sln` in Visual Studio 2022, select **Release Win32**, and build.
